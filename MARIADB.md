@@ -223,3 +223,89 @@ stop slave
 show master staus;
 reset master
 show master status;
+
+# Parallel replication
+By default, replications are single-threaded (only one event executing at a time). This can lead to performance issues when you're using multisource replication without activating parallel replication. Since MariaDB 10, a pool of separate replication worker threads is available to apply multiple events in parallel. You can go up to 10 times faster when parallel replication is enabled.
+
+# Installing HAProxy
+
+## Configuring HAProxy
+HAPROXY Mac
+  /usr/local/opt/haproxy/bin/haproxy -f /usr/local/etc/haproxy.cfg
+ brew logs locations
+ cd /usr/local/var/log
+
+
+```sh
+global
+        log 127.0.0.1   local0
+        log 127.0.0.1   local1 notice
+        maxconn 1024
+        #user haproxy
+        #group haproxy
+        daemon
+
+defaults
+        log     global
+        mode    http
+        option  tcplog
+        option  dontlognull
+        retries 3
+        option  redispatch
+        maxconn 1024
+        timeout connect 5000ms
+        timeout client 50000ms
+        timeout server 50000ms
+
+listen mariadb_cluster_writes
+## A failover pool for writes to ensure writes only hit one node at a time.
+        mode tcp
+        bind *:13304
+        option httpchk
+     	server galera-node01 192.168.1.3:3306 check port 9200
+        server galera-node02 192.168.1.32:3306 check port 9200 backup
+listen mariadb_cluster_reads
+## A load-balanced pool for reads to utilize all nodes for reads.
+        mode tcp
+        bind *:13305
+        balance leastconn
+        option httpchk
+     	server galera-node01 192.168.1.32:3306 check port 9200
+        server galera-node02 192.168.1.3:3306 check port 9200
+
+listen stats
+    bind *:9000
+## HAProxy stats web gui.
+	mode http
+	stats enable
+	stats uri /haproxy_stats
+	stats realm HAProxy Statistics
+	stats auth haproxy:haproxy
+	stats admin if TRUE
+```
+
+# Troubleshooting
+![](2021-09-01-17-05-59.png)
+
+![](2021-09-01-17-05-45.png)
+Correct: You can correct the problem yourself and start the replication again. It won't crash anymore and perform the action. This is done using the following commands:
+MariaDB [(none)]> drop database crap;
+MariaDB [(none)]> start slave;
+
+```sh
+Skip: You don't care about that current problem and prefer to skip it using the following commands:
+MariaDB [(none)]> set global sql_slave_skip_counter=1;
+MariaDB [(none)]> start slave;
+```
+
+###  GTID: skip_counter is unfortunately not available for GTID replications. A discussion is in progress at the moment (https://mariadb.atlassian.net/browse/MDEV-4937). Take the current GTID position on the slave server and then jump to the next ID. The following command line shows an example:
+```sh
+MariaDB [(none)]> SELECT @@GLOBAL.gtid_current_pos;
++---------------------------+
+| @@GLOBAL.gtid_current_pos |
++---------------------------+
+| 0-1-2159                  |
++---------------------------+
+MariaDB [(none)]> set global gtid_slave_pos = "0-1-2160";
+MariaDB [(none)]> start slave;
+```
