@@ -103,5 +103,8 @@ INSTALL PLUGIN SPHINX SONAME 'ha_sphinx';
 ## CREATING SPHINX TABLE
 ```sql
 
-
+INSTALL PLUGIN HANDLERSOCKET SONAME  'handlersocket';
+INSTALL PLUGIN server_audit SONAME  'server_audit';
+set global server_audit_logging=ON;
 ```
+
